@@ -6,6 +6,8 @@ pub mod low_level;
 pub mod qei;
 pub mod simple_pwm;
 
+use embassy_sync::waitqueue::AtomicWaker;
+
 use crate::interrupt;
 use crate::rcc::RccPeripheral;
 
@@ -20,6 +22,20 @@ pub enum Channel {
     Ch3,
     /// Channel 4.
     Ch4,
+}
+
+/// state for the interrupt handler
+pub struct State {
+    waker: AtomicWaker,
+}
+
+impl State {
+    /// Create a new state
+    pub(crate) const fn new() -> Self {
+        Self {
+            waker: AtomicWaker::new(),
+        }
+    }
 }
 
 impl Channel {
@@ -93,7 +109,12 @@ trait General4ChBlankSealed {
 
 /// General-purpose 16-bit timer with 4 channels instance.
 #[allow(private_bounds)]
-pub trait GeneralInstance4Channel: BasicInstance + GeneralInstance2Channel + General4ChBlankSealed {}
+pub trait GeneralInstance4Channel: BasicInstance + GeneralInstance2Channel + General4ChBlankSealed {
+    fn state() -> &'static State {
+        static STATE: State = State::new();
+        &STATE
+    }
+}
 
 /// General-purpose 32-bit timer with 4 channels instance.
 pub trait GeneralInstance32bit4Channel: GeneralInstance4Channel {}

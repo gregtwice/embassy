@@ -1,14 +1,36 @@
 //! Simple PWM driver.
 
+use core::future::poll_fn;
 use core::marker::PhantomData;
+use core::task::Poll;
 
 use embassy_hal_internal::{into_ref, PeripheralRef};
 
 use super::low_level::{CountingMode, OutputCompareMode, OutputPolarity, Timer};
-use super::{Channel, Channel1Pin, Channel2Pin, Channel3Pin, Channel4Pin, GeneralInstance4Channel};
+use super::{
+    Channel, Channel1Pin, Channel2Pin, Channel3Pin, Channel4Pin, GeneralInstance32bit4Channel, GeneralInstance4Channel,
+};
 use crate::gpio::{AnyPin, OutputType};
 use crate::time::Hertz;
 use crate::Peripheral;
+
+use crate::_generated::interrupt::typelevel::Handler;
+
+/// Interrupt handler for a General purpose 32 bit timer
+pub struct InterruptHandler<T: GeneralInstance32bit4Channel> {
+    _phantom: PhantomData<T>,
+}
+
+impl<T: GeneralInstance32bit4Channel> Handler<T::UpdateInterrupt> for InterruptHandler<T> {
+    unsafe fn on_interrupt() {
+        // get the registers of the current timer
+        let regs = unsafe { crate::pac::timer::TimGp32::from_ptr(T::regs()) };
+        // deactivate the interrupt
+        regs.dier().modify(|r| r.set_uie(false));
+        // wake the task
+        T::state().waker.wake();
+    }
+}
 
 /// Channel 1 marker type.
 pub enum Ch1 {}
@@ -124,6 +146,29 @@ impl<'d, T: GeneralInstance4Channel> SimplePwm<'d, T> {
     /// This value depends on the configured frequency and the timer's clock rate from RCC.
     pub fn get_max_duty(&self) -> u32 {
         self.inner.get_max_compare_value() + 1
+    }
+
+    /// Enable the pwm update interrupt
+    pub fn enable_update_interrupt(&mut self, enable: bool) {
+        self.inner.enable_update_interrupt(enable);
+    }
+
+    /// Wait for the PWM's interrupt to be triggered and resume execution when triggered
+    pub async fn wait_update_interrupt(&mut self) {
+        poll_fn(|cx| {
+            T::state().waker.register(cx.waker());
+            self.enable_update_interrupt(true);
+            let regs = self.inner.regs_basic();
+            let sr = regs.sr().read();
+            if sr.uif() {
+                critical_section::with(|_| {
+                    regs.sr().modify(|w| w.set_uif(false));
+                });
+                return Poll::Ready(());
+            }
+            return Poll::Pending;
+        })
+        .await;
     }
 
     /// Set the duty for a given channel.
