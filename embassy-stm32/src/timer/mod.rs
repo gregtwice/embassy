@@ -105,16 +105,16 @@ trait General4ChBlankSealed {
     //
     // Enable timer outputs.
     fn enable_outputs(&self) {}
-}
 
-/// General-purpose 16-bit timer with 4 channels instance.
-#[allow(private_bounds)]
-pub trait GeneralInstance4Channel: BasicInstance + GeneralInstance2Channel + General4ChBlankSealed {
     fn state() -> &'static State {
         static STATE: State = State::new();
         &STATE
     }
 }
+
+/// General-purpose 16-bit timer with 4 channels instance.
+#[allow(private_bounds)]
+pub trait GeneralInstance4Channel: BasicInstance + GeneralInstance2Channel + General4ChBlankSealed {}
 
 /// General-purpose 32-bit timer with 4 channels instance.
 pub trait GeneralInstance32bit4Channel: GeneralInstance4Channel {}
